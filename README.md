@@ -1,11 +1,15 @@
-# Presto: GitHub PR Comment Workflow Tool
+# PResto! 
 
-A systematic, professional approach to handling PR review comments with complete thread organization, automatic skip logic, and systematic response posting.
+![PResto Logo](logo.png)
+
+> PResto! offers a guided workflow to handle PR review comments using Cursor or similar AI code agents.
 
 ## 🚀 Quick Start
 
 ### Installation
 
+
+! Pending.  Not registered with pip yet.
 ```bash
 pip install presto-pr
 ```
