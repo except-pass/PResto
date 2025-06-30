@@ -1,3 +1,7 @@
+# Presto!
+![Presto Logo](logo.png)
+> GitHub PR review. From threads to thoughtful replies in a single incantation.
+
 
 ## Install
 
