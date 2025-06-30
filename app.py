@@ -104,22 +104,7 @@ For responses requiring code changes:
 
 PHASE 6: AUTOMATED POSTING (Threaded + Trackable)
 - Invite the user to edit the response file before posting.  Give them the exact file path to the response file.
-- POST RESPONSES: Submit replies to correct threads using GitHub API
-  * Ensure proper threading with `in_reply_to` relationships
-  * Include references to any commits made
-  * Add actionable next steps if applicable
-- TRACK PROGRESS: Update thread files with posting status
-
-
---- BENEFITS OF THIS WORKFLOW ---
-
-THOROUGHNESS: Deep codebase understanding before responding
-CONSISTENCY: Systematic approach ensures no threads are missed  
-QUALITY: Thoughtful, well-researched responses improve discussion
-ACTIONABILITY: Concrete changes and follow-ups drive progress
-TRACEABILITY: Clear record of decisions and implementations
-EFFICIENCY: Automation reduces manual overhead and errors
-COLLABORATION: Structured approach improves team communication
+- Do not automatically post the responses.  Tell the user to `presto post --session-dir <SESSION_DIR>` when they are ready.
 
 --- USAGE EXAMPLES ---
 
@@ -216,7 +201,7 @@ AI AGENT WORKFLOW INTEGRATION:
 4. Draft responses using append_response_to_thread()
 5. Review thread files with appended DRAFT RESPONSE sections
 6. Use post command to systematically post draft responses to GitHub
-
+7. Careful when using backticks on the CLI.  They will be interpreted as code blocks.  Must properly escape them.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 To begin using this tool:
@@ -412,6 +397,7 @@ class PRCommentWorkflow:
         try:
             if comment_type == "review":
                 # Reply to a review comment (inline code comment)
+                # Use the exact same format as the successful manual command
                 cmd = [
                     "gh", "api", f"repos/{self.repo_full_name}/pulls/{pr_number}/comments",
                     "-f", f"body={reply_body}",
@@ -1007,7 +993,7 @@ class PRCommentWorkflow:
         
         return "\n".join(output)
 
-    def post_responses(self, session_dir: str, thread_number: int = None, post_all: bool = False, dry_run: bool = False) -> bool:
+    def post_responses(self, session_dir: str, thread_number: int = None, post_all: bool = False, dry_run: bool = False, auto_yes: bool = False) -> bool:
         """
         PHASE 6: POST draft responses from thread files to GitHub
         
@@ -1016,6 +1002,7 @@ class PRCommentWorkflow:
             thread_number: Specific thread to post (optional)
             post_all: Post all unposted draft responses
             dry_run: Show what would be posted without actually posting
+            auto_yes: Auto-confirm posting without prompts
             
         Returns:
             bool: True if successful, False otherwise
@@ -1030,6 +1017,13 @@ class PRCommentWorkflow:
             print("❌ Could not determine PR information from session directory")
             return False
         
+        # Update workflow repository info for API calls
+        self.repo_full_name = pr_info['repo']
+        repo_parts = pr_info['repo'].split('/')
+        if len(repo_parts) == 2:
+            self.repo_owner = repo_parts[0]
+            self.repo_name = repo_parts[1]
+        
         print(f"🔍 Session: {session_dir}")
         print(f"📋 PR: #{pr_info['pr_number']} in {pr_info['repo']}")
         
@@ -1043,7 +1037,7 @@ class PRCommentWorkflow:
             thread_files = [f for f in os.listdir(session_dir) if f.startswith("thread_") and f.endswith(".md")]
             thread_files = [f for f in thread_files if not f.startswith("thread_") or "SKIP_" not in f]
         else:
-            print("❌ Must specify either --thread <N> or --all")
+            print("❌ Must specify either a thread number or --all")
             return False
         
         if not thread_files:
@@ -1055,17 +1049,47 @@ class PRCommentWorkflow:
         # Process each thread file
         posted_count = 0
         skipped_count = 0
+        would_post_count = 0
+        
+        # For dry run, show a cleaner summary first
+        if dry_run:
+            print(f"\n🔍 DRY RUN - Analyzing what would be posted...")
         
         for thread_file in thread_files:
             filepath = os.path.join(session_dir, thread_file)
-            print(f"\n📄 Processing: {thread_file}")
+            
+            # Check if thread is manually skipped
+            if self._is_manually_skipped(filepath):
+                if not dry_run:  # Only show skipped in regular mode
+                    print(f"\n📄 Processing: {thread_file}")
+                    print("   ⏭️  MANUALLY SKIPPED - will not post")
+                skipped_count += 1
+                continue
             
             # Extract draft responses from thread file
             draft_responses = self._extract_draft_responses(filepath)
             
             if not draft_responses:
-                print("   📭 No draft responses found")
+                if not dry_run:  # Only show empty threads in regular mode
+                    print(f"\n📄 Processing: {thread_file}")
+                    print("   📭 No draft responses found")
                 continue
+            
+            # For dry run, only show threads that would actually post
+            if dry_run:
+                # Count unposted drafts
+                unposted_drafts = [d for d in draft_responses if not d['posted']]
+                if unposted_drafts:
+                    thread_num = thread_file.split('_')[1]
+                    print(f"\n🟢 WOULD POST Thread {int(thread_num)}: {thread_file}")
+                    for i, draft in enumerate(unposted_drafts):
+                        print(f"   📝 Draft by {draft['author']} ({draft['timestamp']})")
+                        print(f"      Preview: {draft['content'][:150]}...")
+                    would_post_count += len(unposted_drafts)
+                continue
+            
+            # Regular processing (not dry run)
+            print(f"\n📄 Processing: {thread_file}")
             
             # Get thread metadata for posting
             thread_metadata = self._extract_thread_metadata(filepath)
@@ -1083,16 +1107,18 @@ class PRCommentWorkflow:
                 print(f"   📝 Draft {i+1} by {draft['author']} ({draft['timestamp']}):")
                 print(f"      Preview: {draft['content'][:100]}...")
                 
+                # Dry run already handled above - should not reach here
                 if dry_run:
-                    print("   🔍 [DRY RUN] Would post this response")
                     continue
                 
                 # Confirm posting
-                if not post_all and thread_number:
+                if not post_all and thread_number and not auto_yes:
                     confirm = input("   Post this response? (y/N): ").strip().lower()
                     if confirm != 'y':
                         print("   ⏭️  Skipped by user")
                         continue
+                elif auto_yes and not post_all and thread_number:
+                    print("   ✅ Auto-confirmed (--yes flag)")
                 
                 # Post to GitHub
                 success = self._post_draft_response(
@@ -1113,11 +1139,16 @@ class PRCommentWorkflow:
         
         # Summary
         print(f"\n📊 Summary:")
-        print(f"   ✅ Posted: {posted_count}")
-        print(f"   ⏭️  Skipped: {skipped_count}")
-        
         if dry_run:
-            print("🔍 Dry run completed - no responses were actually posted")
+            print(f"   🟢 WOULD POST: {would_post_count} responses")
+            if skipped_count > 0:
+                print(f"   ⏭️  Skipped (manual): {skipped_count} threads")
+            print(f"\n🔍 DRY RUN COMPLETE - No responses were actually posted")
+            if would_post_count > 0:
+                print(f"💡 To post for real: Remove --dry-run flag")
+        else:
+            print(f"   ✅ Posted: {posted_count}")
+            print(f"   ⏭️  Skipped: {skipped_count}")
         
         return True
     
@@ -1262,6 +1293,286 @@ class PRCommentWorkflow:
         
         return False
 
+    def toggle_manual_skip(self, session_dir: str, thread_number: int, mark_skip: bool) -> bool:
+        """
+        Mark or unmark a thread as manually skipped
+        
+        Args:
+            session_dir: Session directory containing thread files
+            thread_number: Thread number to modify
+            mark_skip: True to mark as skipped, False to unmark
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Find the thread file
+            thread_files = [f for f in os.listdir(session_dir) if f.startswith(f"thread_{thread_number:02d}_")]
+            
+            if not thread_files:
+                print(f"❌ Thread {thread_number} not found in session directory")
+                return False
+            
+            thread_file = os.path.join(session_dir, thread_files[0])
+            
+            with open(thread_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Check if manual skip marker already exists
+            has_manual_skip = '**MANUAL_SKIP**:' in content
+            
+            if mark_skip and has_manual_skip:
+                print(f"⚠️  Thread {thread_number} is already marked as manually skipped")
+                return True
+            elif not mark_skip and not has_manual_skip:
+                print(f"⚠️  Thread {thread_number} is not marked as manually skipped")
+                return True
+            
+            lines = content.split('\n')
+            new_lines = []
+            
+            if mark_skip:
+                # Add manual skip marker after the metadata section
+                in_metadata = False
+                added_marker = False
+                
+                for line in lines:
+                    new_lines.append(line)
+                    
+                    if line.strip() == "## Metadata":
+                        in_metadata = True
+                    elif in_metadata and line.startswith('- **') and not added_marker:
+                        # Add after existing metadata lines
+                        if not line.startswith('- **MANUAL_SKIP**'):
+                            continue  # Keep adding metadata
+                    elif in_metadata and (line.strip() == "" or not line.startswith('- **')):
+                        # End of metadata section, add marker before this line
+                        if not added_marker:
+                            new_lines.insert(-1, f"- **MANUAL_SKIP**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                            added_marker = True
+                        in_metadata = False
+                
+                # If we never found metadata section, add at beginning
+                if not added_marker:
+                    # Find a good place to add it (after thread header)
+                    insert_pos = 2  # After "# Thread XX" and empty line
+                    if len(new_lines) > insert_pos:
+                        new_lines.insert(insert_pos, "")
+                        new_lines.insert(insert_pos + 1, "## Manual Skip")
+                        new_lines.insert(insert_pos + 2, f"- **MANUAL_SKIP**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        new_lines.insert(insert_pos + 3, "")
+            else:
+                # Remove manual skip marker
+                new_lines = [line for line in lines if not line.strip().startswith('- **MANUAL_SKIP**')]
+                # Also remove empty Manual Skip section if it exists
+                skip_section_lines = []
+                i = 0
+                while i < len(new_lines):
+                    if new_lines[i].strip() == "## Manual Skip":
+                        # Remove this line and any following empty lines
+                        skip_section_lines.append(i)
+                        j = i + 1
+                        while j < len(new_lines) and new_lines[j].strip() == "":
+                            skip_section_lines.append(j)
+                            j += 1
+                        break
+                    i += 1
+                
+                # Remove lines in reverse order to maintain indices
+                for idx in reversed(skip_section_lines):
+                    new_lines.pop(idx)
+            
+            # Write back to file
+            with open(thread_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(new_lines))
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error modifying manual skip status: {e}")
+            return False
+    
+    def list_manually_skipped_threads(self, session_dir: str) -> None:
+        """List all manually skipped threads in a session directory"""
+        try:
+            thread_files = [f for f in os.listdir(session_dir) if f.startswith("thread_") and f.endswith(".md")]
+            thread_files.sort()
+            
+            manually_skipped = []
+            
+            for thread_file in thread_files:
+                filepath = os.path.join(session_dir, thread_file)
+                
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                if '**MANUAL_SKIP**:' in content:
+                    # Extract skip timestamp
+                    for line in content.split('\n'):
+                        if '**MANUAL_SKIP**:' in line:
+                            timestamp = line.split(':', 1)[1].strip()
+                            manually_skipped.append({
+                                'file': thread_file,
+                                'timestamp': timestamp
+                            })
+                            break
+            
+            if not manually_skipped:
+                print("📭 No threads are manually marked as skipped")
+            else:
+                print(f"⏭️  Found {len(manually_skipped)} manually skipped threads:")
+                for item in manually_skipped:
+                    thread_num = item['file'].split('_')[1]
+                    print(f"   • Thread {int(thread_num)}: {item['file']} (skipped: {item['timestamp']})")
+                    
+                print(f"\n💡 To unmark a thread: presto skip <N> --unmark")
+        
+        except Exception as e:
+            print(f"❌ Error listing manually skipped threads: {e}")
+    
+    def _is_manually_skipped(self, filepath: str) -> bool:
+        """Check if a thread file is manually marked as skipped"""
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            return '**MANUAL_SKIP**:' in content
+        except Exception:
+            return False
+    
+    def _find_session_directories(self) -> List[str]:
+        """Find all session directories in the current directory"""
+        try:
+            dirs = []
+            for item in os.listdir('.'):
+                if os.path.isdir(item) and item.startswith('pr_') and '_review_' in item:
+                    dirs.append(item)
+            return sorted(dirs)
+        except Exception:
+            return []
+    
+    def _auto_detect_session_dir(self, provided_dir: Optional[str] = None) -> str:
+        """
+        Auto-detect session directory if not provided
+        
+        Args:
+            provided_dir: User-provided session directory (optional)
+            
+        Returns:
+            str: Session directory to use
+            
+        Raises:
+            SystemExit: If auto-detection fails or multiple directories found
+        """
+        if provided_dir:
+            if not os.path.exists(provided_dir):
+                print(f"❌ Session directory '{provided_dir}' not found")
+                sys.exit(1)
+            return provided_dir
+        
+        # Auto-detect session directories
+        session_dirs = self._find_session_directories()
+        
+        if len(session_dirs) == 0:
+            print("❌ No session directories found in current directory")
+            print("💡 Session directories should match pattern: pr_#######_review_*")
+            print("💡 Run 'presto analyze' first to create a session, or specify --session-dir")
+            sys.exit(1)
+        elif len(session_dirs) == 1:
+            detected_dir = session_dirs[0]
+            print(f"🔍 Auto-detected session directory: {detected_dir}")
+            return detected_dir
+        else:
+            print(f"❌ Multiple session directories found ({len(session_dirs)}):")
+            for dir_name in session_dirs:
+                print(f"   • {dir_name}")
+            print("\n💡 Either:")
+            print("   1. Delete old session directories you don't need, or")
+            print("   2. Specify the directory explicitly with --session-dir")
+            print("\n💡 Example: presto skip 18 --session-dir pr_123_review_20240101_120000")
+            sys.exit(1)
+    
+    def cleanup_session(self, session_dir: str, force: bool = False) -> bool:
+        """
+        Remove session directory and all thread files
+        
+        Args:
+            session_dir: Session directory to remove
+            force: Force cleanup even if unposted draft responses exist
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        import shutil
+        
+        if not os.path.exists(session_dir):
+            print(f"❌ Session directory '{session_dir}' not found")
+            return False
+        
+        print(f"🔍 Checking session directory: {session_dir}")
+        
+        # Check for unposted draft responses
+        unposted_threads = self._find_unposted_responses(session_dir)
+        
+        if unposted_threads and not force:
+            print(f"\n⚠️  WARNING: Found {len(unposted_threads)} threads with unposted draft responses:")
+            for thread_info in unposted_threads:
+                print(f"   • Thread {thread_info['number']}: {thread_info['drafts']} unposted draft(s)")
+            
+            print(f"\n❌ Cleanup cancelled to protect unposted work.")
+            print(f"💡 Options:")
+            print(f"   1. Post responses first: presto post --all")
+            print(f"   2. Force cleanup anyway: presto cleanup --force")
+            print(f"   3. Skip specific threads: presto skip <thread_number>")
+            return False
+        
+        elif unposted_threads and force:
+            print(f"\n⚠️  WARNING: Found {len(unposted_threads)} threads with unposted draft responses")
+            print(f"🔥 FORCE MODE: Proceeding with cleanup anyway...")
+        
+        else:
+            print(f"✅ No unposted draft responses found - safe to clean up")
+        
+        # Proceed with cleanup
+        try:
+            print(f"🗑️ Removing session directory: {session_dir}")
+            shutil.rmtree(session_dir)
+            print(f"✅ Session directory removed successfully")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error removing session directory: {e}")
+            return False
+    
+    def _find_unposted_responses(self, session_dir: str) -> List[Dict[str, Any]]:
+        """Find threads with unposted draft responses"""
+        unposted_threads = []
+        
+        try:
+            thread_files = [f for f in os.listdir(session_dir) if f.startswith("thread_") and f.endswith(".md")]
+            
+            for thread_file in thread_files:
+                # Skip manually skipped threads
+                filepath = os.path.join(session_dir, thread_file)
+                if self._is_manually_skipped(filepath):
+                    continue
+                
+                # Check for unposted draft responses
+                draft_responses = self._extract_draft_responses(filepath)
+                unposted_drafts = [d for d in draft_responses if not d['posted']]
+                
+                if unposted_drafts:
+                    thread_num = int(thread_file.split('_')[1])
+                    unposted_threads.append({
+                        'number': thread_num,
+                        'file': thread_file,
+                        'drafts': len(unposted_drafts)
+                    })
+        
+        except Exception as e:
+            print(f"⚠️  Error checking for unposted responses: {e}")
+        
+        return unposted_threads
+
 def main():
     # Handle bootstrap prompt when no arguments provided
     if len(sys.argv) == 1:
@@ -1278,13 +1589,17 @@ Available Commands:
   append      Append draft response to thread file (Phase 5)
   search      Search comments for specific text
   post        Post draft responses from thread files (Phase 6)
+  skip        Manually mark/unmark threads to skip posting
+  cleanup     Remove session directory and thread files
 
 Examples:
   presto analyze --repo owner/repo --pr 123
   presto reply --repo owner/repo --pr 123 --comment-id 456 --message "Thanks!"
-  presto append --session-dir pr_123_review_20240101_120000 --thread 1 --content "Response"
+  presto append --thread 1 --content "Response"
   presto search --repo owner/repo --pr 123 --query "validation"
-  presto post --session-dir pr_123_review_20240101_120000 --thread 1
+  presto post 1
+  presto skip 1
+  presto cleanup
 
 For command-specific help: presto <command> --help
         """)
@@ -1333,11 +1648,11 @@ Examples:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  presto append --session-dir pr_123_review_20240101_120000 --thread 1 --content "Thanks for the feedback!"
-  presto append --session-dir pr_123_review_20240101_120000 --thread 2 --content "Here's a fix..." --author "Senior Dev"
-  presto append --session-dir pr_123_review_20240101_120000 --thread 3 --content "Multi-line response here..."
+  presto append --thread 1 --content "Thanks for the feedback!"                                   # Auto-detect session
+  presto append --thread 2 --content "Here's a fix..." --author "Senior Dev"                     # Auto-detect session
+  presto append --session-dir pr_123_review_20240101_120000 --thread 3 --content "Response..."   # Specific session
         """)
-    append_parser.add_argument("--session-dir", required=True, help="Session directory containing thread files")
+    append_parser.add_argument("--session-dir", help="Session directory containing thread files (auto-detected if not specified)")
     append_parser.add_argument("--thread", required=True, type=int, help="Thread number to append response to")
     append_parser.add_argument("--content", required=True, help="Response content to append")
     append_parser.add_argument("--author", default="AI Assistant", help="Author name for the response")
@@ -1366,14 +1681,50 @@ Examples:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  presto post --session-dir pr_123_review_20240101_120000 --thread 1
-  presto post --session-dir pr_123_review_20240101_120000 --thread 2 --dry-run
-  presto post --session-dir pr_123_review_20240101_120000 --all
+  presto post 1                                                            # Post thread 1 (auto-detect session)
+  presto post 1 -y                                                         # Post thread 1 without confirmation
+  presto post 2 --dry-run                                                  # Dry run thread 2 (auto-detect session)
+  presto post --all                                                        # Post all threads (auto-detect session)
+  presto post 1 --session-dir pr_123_review_20240101_120000                # Post thread 1 (specific session)
         """)
-    post_parser.add_argument("--session-dir", required=True, help="Session directory containing thread files")
-    post_parser.add_argument("--thread", type=int, help="Specific thread number to post (optional)")
+    post_parser.add_argument("thread", type=int, nargs='?', help="Thread number to post (optional)")
+    post_parser.add_argument("--session-dir", help="Session directory containing thread files (auto-detected if not specified)")
     post_parser.add_argument("--all", action="store_true", help="Post all unposted draft responses")
     post_parser.add_argument("--dry-run", action="store_true", help="Show what would be posted without actually posting")
+    post_parser.add_argument("-y", "--yes", action="store_true", help="Auto-confirm posting without prompts")
+    
+    # SKIP command (Manual skip control)
+    skip_parser = subparsers.add_parser(
+        'skip',
+        help='Manually mark/unmark threads to skip posting',
+        description='Mark threads as manually skipped so they won\'t be posted even with draft responses. Useful when you draft a response but decide not to post it.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  presto skip 1                                                            # Mark thread 1 as skipped (auto-detect session)
+  presto skip 1 --unmark                                                   # Remove skip marker (auto-detect session)
+  presto skip --list                                                       # List all manually skipped threads (auto-detect)
+  presto skip 1 --session-dir pr_123_review_20240101_120000                # Mark thread 1 as skipped (specific session)
+        """)
+    skip_parser.add_argument("thread", type=int, nargs='?', help="Thread number to mark/unmark as skipped")
+    skip_parser.add_argument("--session-dir", help="Session directory containing thread files (auto-detected if not specified)")
+    skip_parser.add_argument("--unmark", action="store_true", help="Remove manual skip marker from thread")
+    skip_parser.add_argument("--list", action="store_true", help="List all manually skipped threads")
+    
+    # CLEANUP command
+    cleanup_parser = subparsers.add_parser(
+        'cleanup',
+        help='Remove session directory and thread files',
+        description='Remove a session directory and all its thread files. Warns if unposted draft responses exist.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  presto cleanup                                                           # Clean up auto-detected session
+  presto cleanup --session-dir pr_123_review_20240101_120000              # Clean up specific session
+  presto cleanup --force                                                  # Force cleanup even with unposted responses
+        """)
+    cleanup_parser.add_argument("--session-dir", help="Session directory to remove (auto-detected if not specified)")
+    cleanup_parser.add_argument("--force", action="store_true", help="Force cleanup even if unposted draft responses exist")
     
     args = parser.parse_args()
     
@@ -1411,12 +1762,11 @@ Examples:
         print("📝 APPEND RESPONSE MODE (Phase 5)")
         print("="*60)
         
-        if not os.path.exists(args.session_dir):
-            print(f"Error: Session directory '{args.session_dir}' not found")
-            sys.exit(1)
+        # Auto-detect session directory if not provided
+        session_dir = workflow._auto_detect_session_dir(args.session_dir)
         
         success = workflow.append_response_to_thread(
-            args.session_dir, 
+            session_dir, 
             args.thread, 
             args.content,
             args.author
@@ -1434,7 +1784,11 @@ Examples:
         print("\n" + "="*60)
         print("📤 POST MODE (Phase 6)")
         print("="*60)
-        success = workflow.post_responses(args.session_dir, args.thread, args.all, args.dry_run)
+        
+        # Auto-detect session directory if not provided
+        session_dir = workflow._auto_detect_session_dir(args.session_dir)
+        
+        success = workflow.post_responses(session_dir, args.thread, args.all, args.dry_run, args.yes)
         if success:
             if not args.dry_run:
                 print("🎉 Responses posted successfully!")
@@ -1443,90 +1797,127 @@ Examples:
             sys.exit(1)
         return
     
-    # For commands that need PR data, fetch it
-    print(f"🚀 Fetching PR #{args.pr} from {args.repo}...")
-    pr_data = workflow.fetch_pr_comments(args.pr)
-    
-    if not pr_data:
-        print("Failed to fetch PR data. Check the PR number and repository.")
-        sys.exit(1)
-    
-    # Add repo info to pr_data for summary
-    pr_data['repo'] = args.repo
-    
-    if args.command == 'reply':
+    elif args.command == 'skip':
         print("\n" + "="*60)
-        print("💬 REPLY MODE (Phase 6)")
+        print("⏭️ SKIP CONTROL MODE")
         print("="*60)
-        comment_info = workflow.get_comment_by_id(pr_data, args.comment_id)
-        if not comment_info:
-            print(f"Comment ID {args.comment_id} not found in PR #{args.pr}")
+        
+        # Auto-detect session directory if not provided
+        session_dir = workflow._auto_detect_session_dir(args.session_dir)
+        
+        if args.list:
+            workflow.list_manually_skipped_threads(session_dir)
+        elif args.thread is not None:
+            success = workflow.toggle_manual_skip(session_dir, args.thread, not args.unmark)
+            if success:
+                action = "unmarked" if args.unmark else "marked"
+                print(f"✅ Thread {args.thread} {action} as manually skipped")
+            else:
+                print(f"❌ Failed to modify skip status for thread {args.thread}")
+                sys.exit(1)
+        else:
+            print("❌ Must specify either a thread number or --list")
             sys.exit(1)
+        return
+    
+    elif args.command == 'cleanup':
+        print("\n" + "="*60)
+        print("🗑️ CLEANUP MODE")
+        print("="*60)
         
-        success = workflow.reply_to_comment(args.pr, args.comment_id, args.message, comment_info['type'])
+        # Auto-detect session directory if not provided
+        session_dir = workflow._auto_detect_session_dir(args.session_dir)
         
+        success = workflow.cleanup_session(session_dir, args.force)
         if success:
-            print("🎉 Reply posted successfully!")
+            print("✅ Session cleanup completed successfully!")
         else:
-            print("❌ Failed to post reply.")
+            print("❌ Session cleanup failed.")
             sys.exit(1)
         return
     
-    elif args.command == 'search':
-        print("\n" + "="*60)
-        print(f"🔍 SEARCH MODE: '{args.query}'")
-        print("="*60)
-        matches = workflow.find_comment_by_text(pr_data, args.query)
-        if matches:
-            print(f"Found {len(matches)} matching comments:")
-            for i, match in enumerate(matches, 1):
-                print(f"\n--- Match {i} ---")
-                print(f"Type: {match['type']}")
-                print(f"ID: {match['id']}")
-                print(f"Author: {match['author']}")
-                print(f"Created: {match['created_at']}")
-                if match['type'] == 'review':
-                    print(f"File: {match['path']}")
-                    if match['line']:
-                        print(f"Line: {match['line']}")
-                    if match['in_reply_to_id']:
-                        print(f"Reply to ID: {match['in_reply_to_id']}")
-                print(f"Body: {match['body'][:100]}..." if len(match['body']) > 100 else f"Body: {match['body']}")
-                print(f"\n💡 To reply: presto reply --repo {args.repo} --pr {args.pr} --comment-id {match['id']} --message '<your response>'")
-        else:
-            print("No matching comments found.")
-        return
-    
-    elif args.command == 'analyze':
-        # PHASE 1: ALWAYS extract and organize threads (core workflow)
-        print("\n" + "="*60)
-        print("🔄 PHASE 1: THREAD EXTRACTION & ORGANIZATION")
-        print("="*60)
-        session_dir, threads, skip_stats = workflow.extract_and_organize_threads(pr_data)
+    # For commands that need PR data, fetch it first
+    if args.command in ['reply', 'search', 'analyze']:
+        print(f"🔍 Fetching PR #{args.pr} from {args.repo}...")
+        pr_data = workflow.fetch_pr_comments(args.pr)
         
-        # Optional: Also save formatted comments to single file if requested
-        if hasattr(args, 'save') and args.save:
+        if not pr_data:
+            print("Failed to fetch PR data. Check the PR number and repository.")
+            sys.exit(1)
+        
+        # Add repo info to pr_data for summary
+        pr_data['repo'] = args.repo
+        
+        if args.command == 'reply':
             print("\n" + "="*60)
-            print("💾 SAVING FORMATTED COMMENTS")
+            print("💬 REPLY MODE (Phase 6)")
             print("="*60)
-            formatted_content = workflow.format_comments(pr_data)
-            output_file = getattr(args, 'output', None)
-            workflow.save_to_file(formatted_content, output_file)
-        
-        # Provide analysis suggestions
-        print("\n" + "="*60)
-        print("📊 ANALYSIS SUGGESTIONS")
-        print("="*60)
-        suggestions = workflow.analyze_for_response(threads, skip_stats)
-        for suggestion in suggestions:
-            print(f"{suggestion}")
-        
-        print(f"\n✅ Review session complete! Check the '{session_dir}' directory for organized threads.")
-        print(f"💡 Next steps:")
-        print(f"   • Review thread files marked [NEEDS RESPONSE]")
-        print(f"   • Draft responses: presto append --session-dir {session_dir} --thread <N> --content '<response>'")
-        print(f"   • Post replies: presto post --session-dir {session_dir} --thread <N> (or --all for batch)")
-        return
+            comment_info = workflow.get_comment_by_id(pr_data, args.comment_id)
+            if not comment_info:
+                print(f"Comment ID {args.comment_id} not found in PR #{args.pr}")
+                sys.exit(1)
+            
+            success = workflow.reply_to_comment(args.pr, args.comment_id, args.message, comment_info['type'])
+            
+            if success:
+                print("🎉 Reply posted successfully!")
+            else:
+                print("❌ Failed to post reply.")
+            sys.exit(1)
+        elif args.command == 'search':
+            print("\n" + "="*60)
+            print(f"🔍 SEARCH MODE: '{args.query}'")
+            print("="*60)
+            matches = workflow.find_comment_by_text(pr_data, args.query)
+            if matches:
+                print(f"Found {len(matches)} matching comments:")
+                for i, match in enumerate(matches, 1):
+                    print(f"\n--- Match {i} ---")
+                    print(f"Type: {match['type']}")
+                    print(f"ID: {match['id']}")
+                    print(f"Author: {match['author']}")
+                    print(f"Created: {match['created_at']}")
+                    if match['type'] == 'review':
+                        print(f"File: {match['path']}")
+                        if match['line']:
+                            print(f"Line: {match['line']}")
+                        if match['in_reply_to_id']:
+                            print(f"Reply to ID: {match['in_reply_to_id']}")
+                    print(f"Body: {match['body'][:100]}..." if len(match['body']) > 100 else f"Body: {match['body']}")
+                    print(f"\n💡 To reply: presto reply --repo {args.repo} --pr {args.pr} --comment-id {match['id']} --message '<your response>'")
+            else:
+                print("No matching comments found.")
+            return
+        elif args.command == 'analyze':
+            # PHASE 1: ALWAYS extract and organize threads (core workflow)
+            print("\n" + "="*60)
+            print("🔄 PHASE 1: THREAD EXTRACTION & ORGANIZATION")
+            print("="*60)
+            session_dir, threads, skip_stats = workflow.extract_and_organize_threads(pr_data)
+            
+            # Optional: Also save formatted comments to single file if requested
+            if hasattr(args, 'save') and args.save:
+                print("\n" + "="*60)
+                print("💾 SAVING FORMATTED COMMENTS")
+                print("="*60)
+                formatted_content = workflow.format_comments(pr_data)
+                output_file = getattr(args, 'output', None)
+                workflow.save_to_file(formatted_content, output_file)
+            
+            # Provide analysis suggestions
+            print("\n" + "="*60)
+            print("📊 ANALYSIS SUGGESTIONS")
+            print("="*60)
+            suggestions = workflow.analyze_for_response(threads, skip_stats)
+            for suggestion in suggestions:
+                print(f"{suggestion}")
+            
+            print(f"\n✅ Review session complete! Check the '{session_dir}' directory for organized threads.")
+            print(f"💡 Next steps:")
+            print(f"   • Review thread files marked [NEEDS RESPONSE]")
+            print(f"   • Draft responses: presto append --thread <N> --content '<response>'")
+            print(f"   • Post replies: presto post <N> (or --all for batch)")
+            return
 
 if __name__ == "__main__":
     main() 
