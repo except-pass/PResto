@@ -2,12 +2,11 @@
 
 ![PResto Logo](logo.png)
 
-> PResto! offers a guided workflow to handle PR review comments using Cursor or similar AI code agents.
+> PResto! offers an AI native guided workflow to handle PR review comments using Cursor or similar AI code agents.
 
 ## 🚀 Quick Start
 
 ### Installation
-
 
 ! Pending.  Not registered with pip yet.
 ```bash
@@ -18,121 +17,89 @@ pip install presto-pr
 
 - **Python 3.7+**
 - **GitHub CLI**: Install from [cli.github.com](https://cli.github.com/)
-- **Authenticated GitHub CLI**: Run `gh auth login`
+- **Authenticated GitHub CLI**: Run `gh auth login`.  Authenticate `gh` with a fine grained access token with read permissions on "Contents" and read/write access on "Issues" and "Pull requests".  Recommend using a token with these least permissions.
 
-### Basic Usage
 
-```bash
-# Show all available commands
-presto --help
+### Running the AI Native workflow.  
 
-# Analyze PR comments and organize into threads
-presto analyze --repo owner/repo --pr 123
+PResto is designed to be **AI native** - meaning it's designed for AI code agents to use alongside human users. The workflow leverages AI's ability to:
 
-# Draft a response to thread 1
-presto append --session-dir pr_123_review_20240101_120000 --thread 1 --content "Thanks for the feedback!"
+- **Process large volumes of information** quickly (entire PR comment threads, codebase context)
+- **Maintain context** across multiple files and conversations simultaneously  
+- **Generate comprehensive responses** based on thorough codebase analysis
+- **Follow instructions** that are embedded in the tool
 
-# Post the response to GitHub
-presto post --session-dir pr_123_review_20240101_120000 --thread 1
-```
+**Getting Started:**
+1. Open the AI coding agent of your choice (e.g. Cursor, Windsurf, etc.) and select a thinking model
+2. Give it a "kick off" prompt such as the following:
+    - Run the command "presto" then follow the instructions.  We'll use it to review the following PR of this repo: 1.  
+![Kickoff Prompt Example](docs/kickoff_prompt.png)
+3. The AI should use the terminal and run `presto`.  This will print a detailed prompt with instructions for the entire workflow.  The agent should then run the rest of the workflow in order.  You will see text such as 
+> Now I can see the presto workflow! Following the instructions, I need to start with Step 1: analyzing PR 1. First, let me check what the repository details are so I can run the analyze command properly.
+4. Presto will generate a session directory. PResto creates a timestamped session directory (e.g., `pr_123_review_20250701_005337/`) containing:
+   - `session_summary.md` - Overview of the PR, statistics, and thread status
+   - `thread_XX_*.md` files - Individual conversation threads that need responses
+   - Files prefixed with `SKIP_*` are automatically filtered out (no response needed)
+   - Files marked `[NEEDS RESPONSE]` require attention
 
-## 📋 Features
+5. **Direct File Editing**: You can and should edit these thread files directly! 
+   - Open the session directory in your IDE/editor
+   - Edit thread files to refine draft responses before posting
+   - Use your IDE's markdown preview, search, and editing features
+   - The thread files contain all metadata (comment IDs, file paths, line numbers)
+   - Draft responses are clearly marked in `## 📝 DRAFT RESPONSE` sections
 
-- **🔄 Thread Organization**: Automatically groups related comments into conversation threads
-- **⏭️ Smart Skip Logic**: Filters out resolved threads and prevents over-commenting
-- **📝 Draft Management**: Build and review responses before posting
-- **📤 Systematic Posting**: Post responses individually or in batches
-- **🔒 Double-Post Protection**: Prevents accidentally posting the same response twice
-- **📊 Actionable Analytics**: Thread-level statistics and guidance
-- **🎯 Context-Specific Help**: AWS CLI-style subcommands with targeted help
+6. **Workflow Flexibility**: 
+   - Review and modify draft responses in your preferred editor
+   - Use IDE tools for better formatting, spell-check, and markdown rendering
+   - PResto will use your edited content when posting responses
+   - Multiple drafts can be appended to the same thread file
+   - `presto skip ##` any threads you don't want to respond to
 
-## 🛠️ Commands
+7. **Posting Responses**: When you're ready to post your draft responses to GitHub:
+   - `presto post 1` - Post responses for thread 1 only
+   - `presto post --all` - Post all unposted draft responses across all threads
+   - `presto post --dry-run --all` - Preview what would be posted without actually posting (recommended first step)
+   - `presto post 1 -y` - Post thread 1 without confirmation prompts
+   - PResto includes double-post protection (won't post the same response twice)
+   - Posted responses are marked in the thread files to track what's been sent
 
-### Core Workflow
+Absolutely. Based on your preferred tone—professional, educated, conversational, grounded, and written like a senior engineer sharing practical insight—here’s a revised version of that README section:
 
-```bash
-# Phase 1: Analyze and organize PR comments
-presto analyze --repo owner/repo --pr 123
+---
 
-# Phase 5: Draft responses
-presto append --session-dir <session-dir> --thread <N> --content "<response>"
+## 🤖 Prototyping an Agent-Native CLI Pattern
 
-# Phase 6: Post responses
-presto post --session-dir <session-dir> --thread <N>
-presto post --session-dir <session-dir> --all  # Batch mode
-```
+PResto is more than a cute tool for handling GitHub PR review threads.  The real experiment is in **how** it interfaces with AI.
 
-### Utilities
+This tool explores a lightweight pattern:
+**What if the CLI itself was the full integration surface for an AI agent—no plugins, no APIs, no RAG stack?**
 
-```bash
-# Search comments for specific text
-presto search --repo owner/repo --pr 123 --query "validation"
+Modern tools like **Cursor** already understand the terminal. They can follow instructions, navigate file trees, and maintain working memory. So PResto is designed to play to those strengths.
 
-# Direct reply to specific comment ID
-presto reply --repo owner/repo --pr 123 --comment-id 456 --message "Response"
-```
+### 🧭 The Bootstrapping Prompt
 
-### Command Help
+The CLI includes a **built-in bootstrapping prompt**—a full explanation of the tool’s workflow, phases, file structure, and usage. Not just `--help`, but real operational guidance. This gives an AI agent everything it needs to use the tool effectively, without prior knowledge or external orchestration.
 
-Each command has detailed help:
+Agents can read the output, follow the steps, and drive the review process using just the CLI and local files. No need to wrap it in a custom controller or reimplement logic the agent already knows how to handle.
 
-```bash
-presto analyze --help
-presto append --help
-presto post --help
-presto search --help
-presto reply --help
-```
+### 🥫 Don’t Ship a Powered Can Opener with Every Can
 
-## 📖 Workflow
+Too many AI integrations bundle everything—chat UI, context management, semantic search, memory, planning—just to perform simple workflows.
 
-1. **Analyze**: `presto analyze` creates organized thread files in a session directory
-2. **Review**: Examine threads marked `[NEEDS RESPONSE]`, skip `SKIP_*` files
-3. **Draft**: Use `presto append` to add responses to thread files
-4. **Edit**: Manually refine responses in the thread files
-5. **Post**: Use `presto post` to systematically submit responses to GitHub
+It’s like shipping a powered can opener with every can of beans.
 
-## 📁 File Organization
+PResto is an experiment to see if we can make just the pull-tab.
+Everything the agent needs is right there: usage, context, state, structure, next steps.
 
-```
-pr_123_review_20240101_120000/
-├── session_summary.md           # Overview and statistics
-├── thread_01_alice_validation.md    # Thread requiring response
-├── thread_02_SKIP_bob_typo.md       # Auto-skipped thread
-└── thread_03_charlie_performance.md # Another thread
-```
+### Why This Pattern Works
 
-## 🔧 Development
+* **The CLI *is* the interface**: Structured commands, readable outputs, and consistent side effects.
+* **Bootstraps the agent**: The CLI teaches the agent how to use it, on first contact.
+* **Composability > Coupling**: No plugins, no glue code. Just a well-behaved terminal tool.
+* **Respects the agent's strengths**: Let the AI do context tracking, file editing, and navigation—PResto doesn't try to own that.
 
-### Local Installation
+### The Bigger Idea
 
-```bash
-git clone https://github.com/your-username/presto
-cd presto
-pip install -e .
-```
-
-### Run Tests
-
-```bash
-pip install -e ".[dev]"
-pytest
-```
-
-## 📜 License
-
-MIT License - see LICENSE file for details.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/your-username/presto/issues)
-- **Documentation**: This README and `presto --help`
-- **Source**: [GitHub Repository](https://github.com/your-username/presto)
+PResto is one case study, but the pattern is portable:
+**Build tools that don’t just expose functionality—build tools that teach agents how to use them.**
