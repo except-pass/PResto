@@ -45,8 +45,7 @@ STEP 3: 📚 CONTEXTUAL ANALYSIS (Agent Task)
 └─────────────────────────────────────────────────────────────────────────────┘
 • Go through EACH thread file marked [NEEDS RESPONSE] ONE AT A TIME
 • For each thread, determine what action is needed (if any)
-• CRITICAL: Base all responses on actual code in the repository
-• Search extensively for relevant files, functions, classes, patterns
+• Search and read the codebase extensively for relevant files, functions, classes, patterns
 • Read source code, tests, documentation, config files thoroughly
 • Build comprehensive understanding before drafting any response
 
@@ -57,9 +56,10 @@ STEP 4: ✍️ DRAFT RESPONSES
 └─────────────────────────────────────────────────────────────────────────────┘
 • Draft thoughtful, comprehensive responses based on codebase analysis
 • Include code examples, explanations, solutions from actual repository code
+• CRITICAL: Base all responses on actual code in the repository.  If you dont feel you have enough context, ask the user or search the codebase again.          
 • Responses saved as DRAFT RESPONSE sections in thread files
 • Multiple drafts can be appended to same thread
-• IMPORTANT: You or the user can edit responses directly in thread files before posting
+• IMPORTANT: You or the user can edit responses directly in thread files before posting.
 
 STEP 5: 🛠️ IMPLEMENT CHANGES (If Needed)
 ┌─────────────────────────────────────────────────────────────────────────────┐
