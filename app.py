@@ -8,214 +8,126 @@ This script helps fetch and analyze comments from GitHub PRs, then assists with 
 def display_bootstrap_prompt():
     """Display the comprehensive workflow documentation as a bootstrap prompt"""
     print("""
-Presto: GitHub PR Comment Workflow Tool
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    PRESTO: GitHub PR Comment Workflow Tool                  ║
+║                         For AI Agents & Code Assistants                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 
-This script helps fetch and analyze comments from GitHub PRs, then assists with generating responses.
+🎯 PURPOSE: Systematically handle PR review comments with intelligent organization,
+           contextual responses, and automated posting.
 
-=== PEER REVIEW WORKFLOW SYSTEM ===
+═══════════════════════════════════════════════════════════════════════════════
+🔄 CORE WORKFLOW - 6 STEPS WITH COMMANDS
+═══════════════════════════════════════════════════════════════════════════════
 
-This tool implements a comprehensive, systematic approach to handling PR review comments
-that ensures thorough, contextual, and actionable responses. The workflow is designed
-to help maintain high code quality and effective communication during peer reviews.
+STEP 1: 📊 ANALYZE & ORGANIZE THREADS
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: presto analyze --repo OWNER/REPO --pr PR_NUMBER                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+• Fetches all PR comments (general + inline code comments)
+• Groups into conversation threads with reply relationships
+• Creates session directory: pr_123_review_YYYYMMDD_HHMMSS/
+• Applies intelligent skip logic (resolved threads, last commenter detection)
+• Generates thread files: thread_01_author_topic.md, thread_02_...
+• Files marked [NEEDS RESPONSE] require attention, SKIP_* files are filtered out
 
-WORKFLOW OVERVIEW:
-1. THREAD EXTRACTION & ORGANIZATION
-2. SYSTEMATIC RESPONSE PLANNING
-3. CONTEXTUAL ANALYSIS
-4. CRAFTED RESPONSES
-5. IMPLEMENTATION & FOLLOW-UP
-6. AUTOMATED POSTING
+STEP 2: 🔍 SEARCH & EXPLORE (Optional)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: presto search --repo OWNER/REPO --pr PR_NUMBER --query "text"      │
+└─────────────────────────────────────────────────────────────────────────────┘
+• Find specific discussions, concerns, or topics
+• Locate comment IDs for direct replies
+• Understand comment context and relationships
 
---- DETAILED WORKFLOW ---
+STEP 3: 📚 CONTEXTUAL ANALYSIS (Agent Task)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ AGENT ACTION: Read thread files, analyze codebase, build understanding      │
+└─────────────────────────────────────────────────────────────────────────────┘
+• Read thread files in session directory (focus on [NEEDS RESPONSE])
+• Use semantic search to find relevant code, tests, documentation
+• Understand architectural patterns, dependencies, constraints
+• Build comprehensive context for each response
 
-PHASE 1: THREAD EXTRACTION & ORGANIZATION (ALWAYS EXECUTED)
-- Fetch all PR comments (general + review/inline comments)
-- Group comments into conversation threads based on reply relationships
-- Create a dedicated directory for this PR review session (e.g., `pr_18_review_YYYYMMDD_HHMMSS/`)
-- Write each thread to a separate file:
-  * File naming: `thread_01_author_topic.md`, `thread_02_author_topic.md`, etc.
-  * Include all message IDs, timestamps, authors, file paths, line numbers
-  * Preserve threading structure with proper indentation
-  * Add metadata: thread status indicators
+STEP 4: ✍️ DRAFT RESPONSES
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: presto append --thread N --content "response text"                 │
+│ COMMAND: presto append --session-dir SESSION_DIR --thread N --content "..." │
+└─────────────────────────────────────────────────────────────────────────────┘
+• Draft thoughtful, comprehensive responses
+• Include code examples, explanations, solutions
+• Responses saved as DRAFT RESPONSE sections in thread files
+• Multiple drafts can be appended to same thread
 
-PHASE 2: SYSTEMATIC RESPONSE PLANNING
-Execute thread organization and automatic filtering:
-- RUN: `presto analyze --pr <PR_NUMBER> --repo <OWNER/REPO>` to extract and organize all threads
-- AUTOMATIC SKIP DETECTION: Tool automatically identifies threads to skip:
-  * Thread is marked as resolved/closed (keyword detection)
-  * Current user was the last person to comment (avoid over-commenting)
-- REVIEW organized thread files in the created session directory
-- FOCUS on files marked [NEEDS RESPONSE], skip files prefixed with SKIP_
-- IDENTIFY the nature of each comment requiring response:
-  * Direct questions requiring answers
-  * Concerns about code quality, security, performance
-  * Requests for clarification or changes
-  * Missing functionality or documentation
-  * Design disagreements or suggestions
-- PLAN response approach for each thread
-- PREPARE contextual research needed for thorough responses
+STEP 5: 🛠️ IMPLEMENT CHANGES (If Needed)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ AGENT ACTION: Make code changes, create files, update documentation         │
+└─────────────────────────────────────────────────────────────────────────────┘
+• Implement suggested fixes or improvements
+• Create/modify files as discussed in responses
+• Follow established code patterns and best practices
+• Commit changes with descriptive messages
 
-PHASE 3: CONTEXTUAL ANALYSIS (Deep Understanding)
-For each thread requiring response:
-- SCAN CODEBASE: Identify files/folders likely relevant to the discussion
-  * Use semantic search based on thread content
-  * Look for related code patterns, similar implementations
-  * Find documentation, tests, configuration related to the topic
-- DEEP DIVE: Build comprehensive understanding
-  * Read relevant source files completely
-  * Understand data flows, dependencies, architectural patterns
-  * Review related test files and documentation
-  * Check for similar patterns elsewhere in the codebase
-  * Identify potential impacts of suggested changes
-- CONTEXT BUILDING: Create a knowledge base for the response
-  * Summarize current implementation
-  * Identify constraints and dependencies
-  * Note best practices and established patterns
-  * Document any risks or trade-offs
+STEP 6: 📤 POST RESPONSES
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: presto post N                    # Post specific thread            │
+│ COMMAND: presto post --all               # Post all draft responses         │
+│ COMMAND: presto post --dry-run           # Preview what would be posted     │
+└─────────────────────────────────────────┘
+• Reviews draft responses from thread files
+• Posts to GitHub with double-post protection
+• Tracks posted responses to prevent duplicates
 
-PHASE 4: CRAFTED RESPONSES (Thoughtful + Actionable)
-For each thread:
-- CRAFT ANSWER: Write comprehensive, thoughtful response
-  * Address the specific concern or question directly
-  * Provide context and reasoning for decisions
-  * Suggest specific solutions or alternatives
-  * Include code examples where helpful
-  * Reference relevant documentation or standards
-- WRITE TO FILE: Save response draft before posting
-  * File naming: `response_thread_01_author_topic.md`
-  * Include original thread reference for clarity
-  * Mark any action items or follow-up tasks needed
-  * Note any code changes that should be made
+═══════════════════════════════════════════════════════════════════════════════
+🤖 AI AGENT QUICK REFERENCE
+═══════════════════════════════════════════════════════════════════════════════
 
-PHASE 5: IMPLEMENTATION & FOLLOW-UP (Action-Oriented)
-For responses requiring code changes:
-- OFFER TO IMPLEMENT: Ask user if they want to make the changes now
-- MAKE CHANGES: If approved, implement the necessary modifications
-  * Create new files, modify existing code
-  * Add documentation, tests, examples as needed
-  * Follow established code patterns and standards
-- DOCUMENT CHANGES: Update the response file with:
-  * List of files modified/created
-  * Summary of changes made
-  * Any additional considerations or notes
-- GIT COMMIT: Create meaningful commit with descriptive message
-  * Reference the PR and specific thread being addressed
-  * Include co-author information when appropriate
+TYPICAL AGENT WORKFLOW:
+1. presto analyze --repo owner/repo --pr 123
+2. Read session_summary.md for overview
+3. Process each thread_XX_*.md file marked [NEEDS RESPONSE]
+4. For each thread:
+   - Read thread content and understand the discussion
+   - Search codebase for relevant context
+   - Draft response: presto append --thread N --content "..."
+5. presto post --all (or post individually with --dry-run first)
 
-PHASE 6: AUTOMATED POSTING (Threaded + Trackable)
-- Invite the user to edit the response file before posting.  Give them the exact file path to the response file.
-- Do not automatically post the responses.  Tell the user to `presto post --session-dir <SESSION_DIR>` when they are ready.
+COMMON COMMANDS:
+• presto analyze --repo owner/repo --pr 123      # Start workflow
+• presto search --repo owner/repo --pr 123 --query "validation"  # Find topics
+• presto append --thread 1 --content "response"  # Draft response
+• presto post --dry-run                          # Preview posts
+• presto post --all                              # Post all drafts
+• presto skip 1                                  # Mark thread as skipped
+• presto cleanup                                 # Remove session files
 
---- USAGE EXAMPLES ---
+SESSION MANAGEMENT:
+• Session directories auto-detected when commands run from project root
+• Use --session-dir to specify exact session when multiple exist
+• Thread files contain all metadata: IDs, authors, timestamps, file paths
 
-EXAMPLES:
-# Basic workflow - analyze PR comments and organize threads
-presto analyze --pr 18 --repo owner/repo
+ESCAPE SEQUENCES:
+• When using presto append with backticks in content, escape them properly
+• For complex responses, consider using file input or multiple append calls
 
-# Search for specific content in comments
-presto search --pr 18 --repo owner/repo --query "question"
+═══════════════════════════════════════════════════════════════════════════════
+📋 COMMAND REFERENCE
+═══════════════════════════════════════════════════════════════════════════════
 
-# Reply to a specific comment
-presto reply --pr 18 --repo owner/repo --comment-id 12345 --message "Your response here"
+presto analyze --repo OWNER/REPO --pr NUMBER [--save] [--output file.md]
+presto search --repo OWNER/REPO --pr NUMBER --query "search text"
+presto reply --repo OWNER/REPO --pr NUMBER --comment-id ID --message "text"
+presto append [--session-dir DIR] --thread N --content "text" [--author "name"]
+presto post [N] [--session-dir DIR] [--all] [--dry-run] [--yes]
+presto skip [N] [--session-dir DIR] [--unmark] [--list]
+presto cleanup [--session-dir DIR] [--force]
+presto --help                    # Show all available commands
 
-# Analyze with additional file export
-presto analyze --pr 18 --repo owner/repo --save
+═══════════════════════════════════════════════════════════════════════════════
 
-# Comprehensive workflow example:
-# 1. Analyze and organize: presto analyze --repo owner/repo --pr 123
-# 2. Draft responses: presto append --session-dir pr_123_review_* --thread 1 --content "Response"
-# 3. Post replies: presto post --session-dir pr_123_review_* --thread 1 (or --all for batch)
+🚀 START HERE: presto analyze --repo OWNER/REPO --pr PR_NUMBER
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-RUN: presto analyze --pr <PR_NUMBER> --repo <OWNER/REPO>
-
-This will organize comments, apply skip logic, and create thread files. 
-Skip logic automatically filters out threads that don't need responses.
-Focus on files marked [NEEDS RESPONSE] and ignore SKIP_ prefixed files.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔄 PHASE 5: IMPLEMENTATION & FOLLOW-UP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Transform your organized threads into actionable responses
-
-WORKFLOW:
-• Draft responses in the thread files using the convenience method
-• Review and refine content before posting  
-• Test any code suggestions or implementations
-• Post responses systematically using the reply functionality
-
-CONVENIENCE METHOD - append_response_to_thread():
-This method helps you comply with Phase 5 by easily appending draft responses
-to thread files for review before posting.
-
-USAGE EXAMPLES FOR AI AGENTS:
-
-# 1. Basic response appending
-workflow.append_response_to_thread(
-    "pr_123_review_20240101_120000", 
-    1, 
-    "Thanks for the feedback! I'll address this in the next commit."
-)
-
-# 2. Code suggestion response  
-code_response = '''Here's a suggested fix:
-```python
-def validate_input(data):
-    if not data:
-        raise ValueError("Data cannot be empty")
-    return data.strip()
-```
-This addresses the validation concern you raised.'''
-workflow.append_response_to_thread(
-    "pr_123_review_20240101_120000", 
-    2, 
-    code_response, 
-    "Code Reviewer"
-)
-
-# 3. Multi-part response building
-workflow.append_response_to_thread(
-    "pr_123_review_20240101_120000", 
-    3, 
-    "I agree with your architectural concern."
-)
-workflow.append_response_to_thread(
-    "pr_123_review_20240101_120000", 
-    3, 
-    "Let me propose an alternative approach..."
-)
-
-COMMAND LINE USAGE:
-# Append response to thread from command line
-presto append --session-dir "pr_123_review_20240101_120000" --thread 1 --content "Thanks for the feedback!"
-
-# With custom author
-presto append --session-dir "pr_123_review_20240101_120000" --thread 2 --content "Here's the fix..." --author "Senior Developer"
-
-AI AGENT WORKFLOW INTEGRATION:
-1. Run Phase 1 to get session directory and thread analysis
-2. Identify threads marked [NEEDS RESPONSE] from analysis  
-3. Read individual thread files to understand context
-4. Draft responses using append_response_to_thread()
-5. Review thread files with appended DRAFT RESPONSE sections
-6. Use post command to systematically post draft responses to GitHub
-7. Careful when using backticks on the CLI.  They will be interpreted as code blocks.  Must properly escape them.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-To begin using this tool:
-1. Run `presto analyze --pr <PR_NUMBER> --repo <OWNER/REPO>` to start Phase 1
-2. Review the organized thread files in the created directory
-3. Use `presto search --repo <OWNER/REPO> --pr <PR_NUMBER> --query <text>` to find specific comments
-4. Use `presto append --session-dir <SESSION_DIR> --thread <N> --content <response>` to draft responses
-5. Use `presto post --session-dir <SESSION_DIR> --thread <N>` to post individual responses
-6. Use `presto post --session-dir <SESSION_DIR> --all` to post all draft responses
-7. Follow the 6-phase workflow for comprehensive PR review
-
-For help with specific commands, run `presto --help` or `presto <command> --help`
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This creates your session directory and organized thread files.
+Focus on files marked [NEEDS RESPONSE] and ignore SKIP_* prefixed files.
 """)
 
 
@@ -1410,6 +1322,59 @@ class PRCommentWorkflow:
             print(f"⏭️  Found {len(super_list)} manually skipped threads:")
             for file in super_list:
                 print(f"   • {file}")
+
+    def _auto_detect_session_dir(self, provided_session_dir: str = None) -> str:
+        """Auto-detect the most recent session directory if not provided"""
+        if provided_session_dir:
+            return provided_session_dir
+        
+        # Look for pr_*_review_* directories in current directory
+        try:
+            candidates = [d for d in os.listdir('.') if d.startswith('pr_') and '_review_' in d and os.path.isdir(d)]
+            if not candidates:
+                raise ValueError("No session directories found. Run 'presto analyze' first.")
+            
+            # Sort by creation time, most recent first
+            candidates.sort(key=lambda d: os.path.getctime(d), reverse=True)
+            session_dir = candidates[0]
+            print(f"🔍 Auto-detected session directory: {session_dir}")
+            return session_dir
+            
+        except Exception as e:
+            raise ValueError(f"Could not auto-detect session directory: {e}")
+
+    def cleanup_session(self, session_dir: str, force: bool = False) -> bool:
+        """Clean up session directory and files"""
+        try:
+            if not os.path.exists(session_dir):
+                print(f"❌ Session directory '{session_dir}' not found")
+                return False
+            
+            # Check for unposted draft responses unless force is used
+            if not force:
+                thread_files = [f for f in os.listdir(session_dir) if f.startswith("thread_") and f.endswith(".md")]
+                unposted_count = 0
+                
+                for thread_file in thread_files:
+                    filepath = os.path.join(session_dir, thread_file)
+                    draft_responses = self._extract_draft_responses(filepath)
+                    unposted_drafts = [d for d in draft_responses if not d['posted']]
+                    unposted_count += len(unposted_drafts)
+                
+                if unposted_count > 0:
+                    print(f"⚠️  Found {unposted_count} unposted draft responses in session")
+                    print(f"💡 Use --force to cleanup anyway, or post responses first with 'presto post --all'")
+                    return False
+            
+            # Remove the entire session directory
+            import shutil
+            shutil.rmtree(session_dir)
+            print(f"🗑️  Removed session directory: {session_dir}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error during cleanup: {e}")
+            return False
 
 def main():
     # Handle bootstrap prompt when no arguments provided
