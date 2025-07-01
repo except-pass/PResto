@@ -41,22 +41,25 @@ STEP 2: 🔍 SEARCH & EXPLORE (Optional)
 
 STEP 3: 📚 CONTEXTUAL ANALYSIS (Agent Task)
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ AGENT ACTION: Read thread files, analyze codebase, build understanding      │
+│ AGENT ACTION: Process each non-skipped thread systematically                │
 └─────────────────────────────────────────────────────────────────────────────┘
-• Read thread files in session directory (focus on [NEEDS RESPONSE])
-• Use semantic search to find relevant code, tests, documentation
-• Understand architectural patterns, dependencies, constraints
-• Build comprehensive context for each response
+• Go through EACH thread file marked [NEEDS RESPONSE] ONE AT A TIME
+• For each thread, determine what action is needed (if any)
+• CRITICAL: Base all responses on actual code in the repository
+• Search extensively for relevant files, functions, classes, patterns
+• Read source code, tests, documentation, config files thoroughly
+• Build comprehensive understanding before drafting any response
 
 STEP 4: ✍️ DRAFT RESPONSES
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ COMMAND: presto append --thread N --content "response text"                 │
 │ COMMAND: presto append --session-dir SESSION_DIR --thread N --content "..." │
 └─────────────────────────────────────────────────────────────────────────────┘
-• Draft thoughtful, comprehensive responses
-• Include code examples, explanations, solutions
+• Draft thoughtful, comprehensive responses based on codebase analysis
+• Include code examples, explanations, solutions from actual repository code
 • Responses saved as DRAFT RESPONSE sections in thread files
 • Multiple drafts can be appended to same thread
+• IMPORTANT: You or the user can edit responses directly in thread files before posting
 
 STEP 5: 🛠️ IMPLEMENT CHANGES (If Needed)
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -84,11 +87,14 @@ STEP 6: 📤 POST RESPONSES
 TYPICAL AGENT WORKFLOW:
 1. presto analyze --repo owner/repo --pr 123
 2. Read session_summary.md for overview
-3. Process each thread_XX_*.md file marked [NEEDS RESPONSE]
+3. Process EACH thread_XX_*.md file marked [NEEDS RESPONSE] ONE BY ONE
 4. For each thread:
-   - Read thread content and understand the discussion
-   - Search codebase for relevant context
-   - Draft response: presto append --thread N --content "..."
+   - Read thread content and understand the specific discussion/concern
+   - Determine if action is needed (some threads may need no response)
+   - Search codebase extensively for relevant context (files, functions, patterns)
+   - Read actual source code, tests, docs to understand current implementation
+   - Draft response based on real codebase evidence: presto append --thread N --content "..."
+   - Remember: You can edit the response directly in the thread file if needed
 5. presto post --all (or post individually with --dry-run first)
 
 COMMON COMMANDS:
@@ -104,6 +110,7 @@ SESSION MANAGEMENT:
 • Session directories auto-detected when commands run from project root
 • Use --session-dir to specify exact session when multiple exist
 • Thread files contain all metadata: IDs, authors, timestamps, file paths
+• KEY PRINCIPLE: Always investigate the actual codebase thoroughly before responding
 
 ESCAPE SEQUENCES:
 • When using presto append with backticks in content, escape them properly
