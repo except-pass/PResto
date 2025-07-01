@@ -953,14 +953,23 @@ class PRCommentWorkflow:
                 print(f"❌ Thread {thread_number} not found in session directory")
                 return False
         elif post_all:
-            thread_files = [f for f in os.listdir(session_dir) if f.startswith("thread_") and f.endswith(".md")]
-            thread_files = [f for f in thread_files if not f.startswith("thread_") or "SKIP_" not in f]
+            all_thread_files = [f for f in os.listdir(session_dir) if f.startswith("thread_") and f.endswith(".md")]
+            skip_files = [f for f in all_thread_files if "SKIP_" in f]
+            thread_files = [f for f in all_thread_files if "SKIP_" not in f]
+            
+            # Show skip information when files are skipped
+            if skip_files:
+                print(f"📋 Found {len(skip_files)} files marked as SKIP (auto-filtered):")
+                for skip_file in sorted(skip_files):
+                    print(f"   ⏭️  {skip_file}")
+                if thread_files:
+                    print()
         else:
             print("❌ Must specify either a thread number or --all")
             return False
         
         if not thread_files:
-            print("📭 No thread files found to process")
+            print("📭 No thread files found to process" + (" (all threads are marked as SKIP)" if post_all and skip_files else ""))
             return True
         
         thread_files.sort()  # Process in order
