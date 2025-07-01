@@ -1293,285 +1293,123 @@ class PRCommentWorkflow:
         
         return False
 
-    def toggle_manual_skip(self, session_dir: str, thread_number: int, mark_skip: bool) -> bool:
-        """
-        Mark or unmark a thread as manually skipped
-        
-        Args:
-            session_dir: Session directory containing thread files
-            thread_number: Thread number to modify
-            mark_skip: True to mark as skipped, False to unmark
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
+    def _get_pr_config_path(self, pr_number: int) -> str:
+        """Return path to persistent configuration file for this PR"""
+        base_dir = os.path.expanduser("~/.presto")
+        repo_dir = os.path.join(base_dir, self.repo_owner, self.repo_name)
+        os.makedirs(repo_dir, exist_ok=True)
+        return os.path.join(repo_dir, f"{pr_number}.txt")
+
+    def _load_skip_registry(self, pr_number: int) -> set:
+        """Load skip registry for PR, return set of thread numbers (int)"""
+        path = self._get_pr_config_path(pr_number)
+        if not os.path.exists(path):
+            return set()
         try:
-            # Find the thread file
-            thread_files = [f for f in os.listdir(session_dir) if f.startswith(f"thread_{thread_number:02d}_")]
-            
-            if not thread_files:
-                print(f"❌ Thread {thread_number} not found in session directory")
-                return False
-            
-            thread_file = os.path.join(session_dir, thread_files[0])
-            
-            with open(thread_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Check if manual skip marker already exists
-            has_manual_skip = '**MANUAL_SKIP**:' in content
-            
-            if mark_skip and has_manual_skip:
-                print(f"⚠️  Thread {thread_number} is already marked as manually skipped")
-                return True
-            elif not mark_skip and not has_manual_skip:
-                print(f"⚠️  Thread {thread_number} is not marked as manually skipped")
-                return True
-            
-            lines = content.split('\n')
-            new_lines = []
-            
-            if mark_skip:
-                # Add manual skip marker after the metadata section
-                in_metadata = False
-                added_marker = False
-                
-                for line in lines:
-                    new_lines.append(line)
-                    
-                    if line.strip() == "## Metadata":
-                        in_metadata = True
-                    elif in_metadata and line.startswith('- **') and not added_marker:
-                        # Add after existing metadata lines
-                        if not line.startswith('- **MANUAL_SKIP**'):
-                            continue  # Keep adding metadata
-                    elif in_metadata and (line.strip() == "" or not line.startswith('- **')):
-                        # End of metadata section, add marker before this line
-                        if not added_marker:
-                            new_lines.insert(-1, f"- **MANUAL_SKIP**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                            added_marker = True
-                        in_metadata = False
-                
-                # If we never found metadata section, add at beginning
-                if not added_marker:
-                    # Find a good place to add it (after thread header)
-                    insert_pos = 2  # After "# Thread XX" and empty line
-                    if len(new_lines) > insert_pos:
-                        new_lines.insert(insert_pos, "")
-                        new_lines.insert(insert_pos + 1, "## Manual Skip")
-                        new_lines.insert(insert_pos + 2, f"- **MANUAL_SKIP**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                        new_lines.insert(insert_pos + 3, "")
-            else:
-                # Remove manual skip marker
-                new_lines = [line for line in lines if not line.strip().startswith('- **MANUAL_SKIP**')]
-                # Also remove empty Manual Skip section if it exists
-                skip_section_lines = []
-                i = 0
-                while i < len(new_lines):
-                    if new_lines[i].strip() == "## Manual Skip":
-                        # Remove this line and any following empty lines
-                        skip_section_lines.append(i)
-                        j = i + 1
-                        while j < len(new_lines) and new_lines[j].strip() == "":
-                            skip_section_lines.append(j)
-                            j += 1
-                        break
-                    i += 1
-                
-                # Remove lines in reverse order to maintain indices
-                for idx in reversed(skip_section_lines):
-                    new_lines.pop(idx)
-            
-            # Write back to file
-            with open(thread_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(new_lines))
-            
-            return True
-            
-        except Exception as e:
-            print(f"❌ Error modifying manual skip status: {e}")
-            return False
-    
-    def list_manually_skipped_threads(self, session_dir: str) -> None:
-        """List all manually skipped threads in a session directory"""
+            with open(path, "r", encoding="utf-8") as f:
+                return {int(x.strip()) for x in f.readlines() if x.strip().isdigit()}
+        except Exception:
+            return set()
+
+    def _save_skip_registry(self, pr_number: int, threads: set):
+        """Save skip registry for PR"""
+        path = self._get_pr_config_path(pr_number)
         try:
-            thread_files = [f for f in os.listdir(session_dir) if f.startswith("thread_") and f.endswith(".md")]
-            thread_files.sort()
-            
-            manually_skipped = []
-            
-            for thread_file in thread_files:
-                filepath = os.path.join(session_dir, thread_file)
-                
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                if '**MANUAL_SKIP**:' in content:
-                    # Extract skip timestamp
-                    for line in content.split('\n'):
-                        if '**MANUAL_SKIP**:' in line:
-                            timestamp = line.split(':', 1)[1].strip()
-                            manually_skipped.append({
-                                'file': thread_file,
-                                'timestamp': timestamp
-                            })
-                            break
-            
-            if not manually_skipped:
-                print("📭 No threads are manually marked as skipped")
-            else:
-                print(f"⏭️  Found {len(manually_skipped)} manually skipped threads:")
-                for item in manually_skipped:
-                    thread_num = item['file'].split('_')[1]
-                    print(f"   • Thread {int(thread_num)}: {item['file']} (skipped: {item['timestamp']})")
-                    
-                print(f"\n💡 To unmark a thread: presto skip <N> --unmark")
-        
+            with open(path, "w", encoding="utf-8") as f:
+                for t in sorted(threads):
+                    f.write(f"{t}\n")
         except Exception as e:
-            print(f"❌ Error listing manually skipped threads: {e}")
-    
+            print(f"⚠️  Error saving PR configuration: {e}")
+
     def _is_manually_skipped(self, filepath: str) -> bool:
-        """Check if a thread file is manually marked as skipped"""
+        """Check if a thread file is manually marked as skipped or in registry"""
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
-            return '**MANUAL_SKIP**:' in content
+            if '**MANUAL_SKIP**:' in content:
+                return True
         except Exception:
+            pass
+        # Check registry
+        session_dir = os.path.dirname(filepath)
+        pr_info = self._extract_pr_info_from_session(session_dir)
+        if pr_info:
+            registry = self._load_skip_registry(pr_info['pr_number'])
+            try:
+                thread_num = int(os.path.basename(filepath).split('_')[1])
+                return thread_num in registry
+            except (IndexError, ValueError):
+                return False
+        return False
+
+    def toggle_manual_skip(self, session_dir: str, thread_number: int, mark_skip: bool) -> bool:
+        """
+        Mark or unmark a thread as manually skipped (persistent registry + file marker)
+        """
+        pr_info = self._extract_pr_info_from_session(session_dir)
+        pr_number = pr_info['pr_number'] if pr_info else None
+        if pr_number is None:
+            print("❌ Unable to determine PR number for registry update")
             return False
-    
-    def _find_session_directories(self) -> List[str]:
-        """Find all session directories in the current directory"""
-        try:
-            dirs = []
-            for item in os.listdir('.'):
-                if os.path.isdir(item) and item.startswith('pr_') and '_review_' in item:
-                    dirs.append(item)
-            return sorted(dirs)
-        except Exception:
-            return []
-    
-    def _auto_detect_session_dir(self, provided_dir: Optional[str] = None) -> str:
-        """
-        Auto-detect session directory if not provided
-        
-        Args:
-            provided_dir: User-provided session directory (optional)
-            
-        Returns:
-            str: Session directory to use
-            
-        Raises:
-            SystemExit: If auto-detection fails or multiple directories found
-        """
-        if provided_dir:
-            if not os.path.exists(provided_dir):
-                print(f"❌ Session directory '{provided_dir}' not found")
-                sys.exit(1)
-            return provided_dir
-        
-        # Auto-detect session directories
-        session_dirs = self._find_session_directories()
-        
-        if len(session_dirs) == 0:
-            print("❌ No session directories found in current directory")
-            print("💡 Session directories should match pattern: pr_#######_review_*")
-            print("💡 Run 'presto analyze' first to create a session, or specify --session-dir")
-            sys.exit(1)
-        elif len(session_dirs) == 1:
-            detected_dir = session_dirs[0]
-            print(f"🔍 Auto-detected session directory: {detected_dir}")
-            return detected_dir
+        registry = self._load_skip_registry(pr_number)
+        if mark_skip:
+            registry.add(thread_number)
         else:
-            print(f"❌ Multiple session directories found ({len(session_dirs)}):")
-            for dir_name in session_dirs:
-                print(f"   • {dir_name}")
-            print("\n💡 Either:")
-            print("   1. Delete old session directories you don't need, or")
-            print("   2. Specify the directory explicitly with --session-dir")
-            print("\n💡 Example: presto skip 18 --session-dir pr_123_review_20240101_120000")
-            sys.exit(1)
-    
-    def cleanup_session(self, session_dir: str, force: bool = False) -> bool:
-        """
-        Remove session directory and all thread files
-        
-        Args:
-            session_dir: Session directory to remove
-            force: Force cleanup even if unposted draft responses exist
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        import shutil
-        
-        if not os.path.exists(session_dir):
-            print(f"❌ Session directory '{session_dir}' not found")
-            return False
-        
-        print(f"🔍 Checking session directory: {session_dir}")
-        
-        # Check for unposted draft responses
-        unposted_threads = self._find_unposted_responses(session_dir)
-        
-        if unposted_threads and not force:
-            print(f"\n⚠️  WARNING: Found {len(unposted_threads)} threads with unposted draft responses:")
-            for thread_info in unposted_threads:
-                print(f"   • Thread {thread_info['number']}: {thread_info['drafts']} unposted draft(s)")
-            
-            print(f"\n❌ Cleanup cancelled to protect unposted work.")
-            print(f"💡 Options:")
-            print(f"   1. Post responses first: presto post --all")
-            print(f"   2. Force cleanup anyway: presto cleanup --force")
-            print(f"   3. Skip specific threads: presto skip <thread_number>")
-            return False
-        
-        elif unposted_threads and force:
-            print(f"\n⚠️  WARNING: Found {len(unposted_threads)} threads with unposted draft responses")
-            print(f"🔥 FORCE MODE: Proceeding with cleanup anyway...")
-        
-        else:
-            print(f"✅ No unposted draft responses found - safe to clean up")
-        
-        # Proceed with cleanup
+            registry.discard(thread_number)
+        self._save_skip_registry(pr_number, registry)
+
+        # existing logic unchanged below
         try:
-            print(f"🗑️ Removing session directory: {session_dir}")
-            shutil.rmtree(session_dir)
-            print(f"✅ Session directory removed successfully")
+            thread_files = [f for f in os.listdir(session_dir) if f.startswith(f"thread_{thread_number:02d}_")]
+            if not thread_files:
+                print(f"❌ Thread {thread_number} not found in session directory")
+                return False
+            thread_file = os.path.join(session_dir, thread_files[0])
+            with open(thread_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            has_manual_skip = '**MANUAL_SKIP**:' in content
+            if mark_skip and has_manual_skip:
+                return True
+            if not mark_skip and not has_manual_skip:
+                return True
+            lines = content.split('\n')
+            new_lines = []
+            if mark_skip and not has_manual_skip:
+                new_lines = lines + ['- **MANUAL_SKIP**: registry']
+            elif not mark_skip and has_manual_skip:
+                new_lines = [line for line in lines if not line.strip().startswith('- **MANUAL_SKIP**')]
+            else:
+                new_lines = lines
+            with open(thread_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(new_lines))
             return True
-            
         except Exception as e:
-            print(f"❌ Error removing session directory: {e}")
+            print(f"❌ Error modifying manual skip status: {e}")
             return False
-    
-    def _find_unposted_responses(self, session_dir: str) -> List[Dict[str, Any]]:
-        """Find threads with unposted draft responses"""
-        unposted_threads = []
-        
+
+    def list_manually_skipped_threads(self, session_dir: str) -> None:
+        """List all manually skipped threads (registry + file markers)"""
+        pr_info = self._extract_pr_info_from_session(session_dir)
+        pr_number = pr_info['pr_number'] if pr_info else None
+        registry = self._load_skip_registry(pr_number) if pr_number else set()
+        super_list = []  # collect thread info
         try:
             thread_files = [f for f in os.listdir(session_dir) if f.startswith("thread_") and f.endswith(".md")]
-            
+            thread_files.sort()
             for thread_file in thread_files:
-                # Skip manually skipped threads
                 filepath = os.path.join(session_dir, thread_file)
-                if self._is_manually_skipped(filepath):
-                    continue
-                
-                # Check for unposted draft responses
-                draft_responses = self._extract_draft_responses(filepath)
-                unposted_drafts = [d for d in draft_responses if not d['posted']]
-                
-                if unposted_drafts:
-                    thread_num = int(thread_file.split('_')[1])
-                    unposted_threads.append({
-                        'number': thread_num,
-                        'file': thread_file,
-                        'drafts': len(unposted_drafts)
-                    })
-        
+                thread_num = int(thread_file.split('_')[1])
+                if thread_num in registry or '**MANUAL_SKIP**:' in open(filepath, encoding='utf-8').read():
+                    super_list.append(thread_file)
         except Exception as e:
-            print(f"⚠️  Error checking for unposted responses: {e}")
-        
-        return unposted_threads
+            print(f"❌ Error listing skipped threads: {e}")
+            return
+        if not super_list:
+            print("📭 No threads are manually marked as skipped (registry + file)")
+        else:
+            print(f"⏭️  Found {len(super_list)} manually skipped threads:")
+            for file in super_list:
+                print(f"   • {file}")
 
 def main():
     # Handle bootstrap prompt when no arguments provided
